@@ -1,7 +1,8 @@
 import asyncio
 import logging
+import boto3
+import json
 from config_reader import config
-
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -27,8 +28,6 @@ from keyboards import (
     keyboard_transmission
 )
 
-import boto3
-import json
 
 BUCKET = "hw-bot"
 
@@ -93,8 +92,8 @@ async def cmd_cancel(message: Message):
     )
 
 
-# Этот хэндлер будет срабатывать на команду "/cancel" в любых состояниях,
-# кроме состояния по умолчанию, и отключать машину состояний
+# Хэндлер на команду /cancel (в любых состояниях,
+# кроме состояния по умолчанию, и отключать машину состояний0
 @dp.message(Command(commands='cancel'), ~StateFilter(default_state))
 async def cmd_cancel_state(message: Message, state: FSMContext):
     await message.answer(
@@ -104,8 +103,8 @@ async def cmd_cancel_state(message: Message, state: FSMContext):
     await state.clear()
 
 
-# Этот хэндлер будет срабатывать на команду /fillform
-# и переводить бота в состояние ожидания ввода названия машины
+# Хэндлер на команду /fillform
+# Переводит бота в состояние ожидания ввода названия машины
 @dp.message(Command(commands='fillform'), StateFilter(default_state))
 async def cmd_fillform(message: Message, state: FSMContext):
     await message.answer(text='Пожалуйста, введите название машины на английском')
@@ -317,8 +316,7 @@ async def cmd_showdata(message: Message):
                    f'Количество владельцев: {user_dict[message.from_user.id]["owner"]}\n' \
                    f'Тип продавца: {user_dict[message.from_user.id]["seller"]}\n' \
                    f'Расход топлива: {user_dict[message.from_user.id]["mileage"]}\n' \
-                   f'Объем двигателя: {user_dict[message.from_user.id]["engine"]}' \
-                   f'{user_dict[message.from_user.id]}'
+                   f'Объем двигателя: {user_dict[message.from_user.id]["engine"]}' 
         await message.answer(text=car_info)
     else:
         await message.answer(
