@@ -9,18 +9,34 @@ from aiogram.fsm.state import default_state, State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import CallbackQuery, Message
 
-from texts import helptext, starttext, canceltext1, canceltext2, errortext1, errortext2, misunderstandtext, zerorates
-from keyboards import markup_fuel, markup_seller, markup_transmission, markup_owner, markup_rate
+from texts import (
+    helptext,
+    starttext,
+    canceltext1,
+    canceltext2,
+    errortext1, errortext2,
+    misunderstandtext,
+    zerorates
+)
+
+from keyboards import (
+    keyboard_fuel,
+    keyboard_rate,
+    keyboard_seller,
+    keyboard_owner,
+    keyboard_transmission
+)
 
 import boto3
 import json
-from private_key import s3_access_key, s3_secret_key, BUCKET
+
+BUCKET = "hw-bot"
 
 s3 = boto3.client(
     service_name='s3',
     endpoint_url='https://storage.yandexcloud.net',
-    aws_access_key_id=s3_access_key,
-    aws_secret_access_key=s3_secret_key
+    aws_access_key_id='YCAJE9Z7kcFQJrHKuIBvOtRxY',
+    aws_secret_access_key='YCO8qhlcCNOxgiCqA_2AGTVZcvPfVNpZ3SvlYHBW'
 )
 
 # Инициализируем хранилище (создаем экземпляр класса MemoryStorage)
@@ -146,7 +162,7 @@ async def process_km_driven_sent(message: Message, state: FSMContext):
     # Отправляем пользователю сообщение с клавиатурой
     await message.answer(
         text='Укажите тип топлива',
-        reply_markup=markup_fuel
+        reply_markup=keyboard_fuel()
     )
     # Устанавливаем состояние ожидания выбора типа топлива автомобиля
     await state.set_state(FSMFillForm.fill_fuel)
@@ -170,7 +186,7 @@ async def process_fuel(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(text=f'Вы выбрали значение: {callback.data}')
     await callback.message.answer(
         text='Выберите, кто продает автомобиль',
-        reply_markup=markup_seller
+        reply_markup=keyboard_seller()
     )
     # Устанавливаем состояние выбора продавца
     await state.set_state(FSMFillForm.fill_seller_type)
@@ -193,7 +209,7 @@ async def process_seller_type(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(text=f'Вы выбрали значение: {callback.data}')
     await callback.message.answer(
         text='Выберите коробку передач',
-        reply_markup=markup_transmission
+        reply_markup=keyboard_transmission()
     )
     # Устанавливаем состояние выбора коробки передач
     await state.set_state(FSMFillForm.fill_transmission)
@@ -216,7 +232,7 @@ async def process_transmission(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(text=f'Вы выбрали значение: {callback.data}')
     await callback.message.answer(
         text='Выберите, сколько владельцев было у автомобиля',
-        reply_markup=markup_owner
+        reply_markup=keyboard_owner()
     )
     # Устанавливаем состояние выбора владельцев
     await state.set_state(FSMFillForm.fill_owner)
@@ -303,8 +319,6 @@ async def cmd_showdata(message: Message):
                    f'Расход топлива: {user_dict[message.from_user.id]["mileage"]}\n' \
                    f'Объем двигателя: {user_dict[message.from_user.id]["engine"]}' \
                    f'{user_dict[message.from_user.id]}'
-
-
         await message.answer(text=car_info)
     else:
         await message.answer(
@@ -318,7 +332,7 @@ async def cmd_showdata(message: Message):
 async def cmd_rate(message: Message):
     await message.answer(
         text='Поставьте оценку этому боту:',
-        reply_markup=markup_rate
+        reply_markup=keyboard_rate()
     )
 
 
