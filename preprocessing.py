@@ -1,7 +1,7 @@
 import pandas as pd
 import pickle
 
-with open("best_mode.pickle", "rb") as file:
+with open("best_model.pickle", "rb") as file:
     data = pickle.load(file)
     model = data['best_model']
     scaler = data['scaler']
