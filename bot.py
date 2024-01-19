@@ -2,6 +2,7 @@ import asyncio
 import logging
 import boto3
 import json
+
 from config_reader import config
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, StateFilter
@@ -15,9 +16,12 @@ from texts import (
     starttext,
     canceltext1,
     canceltext2,
-    errortext1, errortext2,
+    errortext1,
+    errortext2,
+    carinfo,
     misunderstandtext,
-    zerorates
+    zerorates,
+    emptydict
 )
 
 from keyboards import (
@@ -28,6 +32,7 @@ from keyboards import (
     keyboard_transmission
 )
 
+from preprocessing import predict_item
 
 BUCKET = "hw-bot"
 
@@ -70,21 +75,21 @@ class FSMFillForm(StatesGroup):
 
 
 # Хэндлер на команду /start
-@dp.message(Command("start"), StateFilter(default_state))
+@dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(f'{message.from_user.full_name}, привет! 👋\n')
     await message.answer(text=starttext)
 
 
 # Хэндлер на команду /help
-@dp.message(Command('help'), StateFilter(default_state))
+@dp.message(Command('help'))
 async def cmd_help(message: types.Message):
     await message.answer(text='Список возможных команд:')
     await message.answer(text=helptext)
 
 
-# Этот хэндлер будет срабатывать на команду "/cancel" в состоянии
-# по умолчанию и сообщать, что эта команда работает внутри машины состояний
+# Хэндлер на команду /cancel
+# в состоянии по умолчанию
 @dp.message(Command(commands='cancel'), StateFilter(default_state))
 async def cmd_cancel(message: Message):
     await message.answer(
@@ -92,8 +97,8 @@ async def cmd_cancel(message: Message):
     )
 
 
-# Хэндлер на команду /cancel (в любых состояниях,
-# кроме состояния по умолчанию, и отключать машину состояний0
+# Хэндлер на команду /cancel
+# в любых состояниях, кроме состояния по умолчанию
 @dp.message(Command(commands='cancel'), ~StateFilter(default_state))
 async def cmd_cancel_state(message: Message, state: FSMContext):
     await message.answer(
@@ -156,9 +161,7 @@ async def warning_not_year(message: Message):
 @dp.message(StateFilter(FSMFillForm.fill_km_driven),
             lambda x: x.text.isdigit() and int(x.text) >= 0)
 async def process_km_driven_sent(message: Message, state: FSMContext):
-    # Сохраняем пробег в хранилище по ключу "km_driven"
     await state.update_data(km_driven=message.text)
-    # Отправляем пользователю сообщение с клавиатурой
     await message.answer(
         text='Укажите тип топлива',
         reply_markup=keyboard_fuel()
@@ -269,8 +272,7 @@ async def warning_not_owner(message: Message):
 # Этот хэндлер будет срабатывать, если введен расход топлива
 @dp.message(StateFilter(FSMFillForm.fill_mileage),
             lambda x: float(x.text) >= 0)
-async def process_year_sent(message: Message, state: FSMContext):
-    # Cохраняем в хранилище по ключу "mileage"
+async def process_mileage_sent(message: Message, state: FSMContext):
     await state.update_data(mileage=message.text)
     await message.answer(text='Введите объем двигателя (кубические см)')
     # Устанавливаем состояние ожидания ввода объема двигателя
@@ -289,20 +291,66 @@ async def warning_not_mileage(message: Message):
 # Этот хэндлер будет срабатывать, если введен корректный объем двигателя
 @dp.message(StateFilter(FSMFillForm.fill_engine),
             lambda x: float(x.text) >= 0)
-async def process_year_sent(message: Message, state: FSMContext):
+async def process_engine_sent(message: Message, state: FSMContext):
     await state.update_data(engine=message.text)
+    await message.answer(text='Введите максимальную мощность (bhp)')
+    # Устанавливаем состояние ожидания ввода максимальной мощности
+    await state.set_state(FSMFillForm.fill_max_power)
+
+
+# Этот хэндлер будет срабатывать, если во время ввода
+# будет введено что-то некорректное
+@dp.message(StateFilter(FSMFillForm.fill_engine))
+async def warning_not_engine(message: Message):
+    await message.answer(
+        text=errortext1
+    )
+
+
+# Этот хэндлер будет срабатывать, если введена корректо мощность
+@dp.message(StateFilter(FSMFillForm.fill_max_power),
+            lambda x: float(x.text) >= 0)
+async def process_power_sent(message: Message, state: FSMContext):
+    await state.update_data(max_power=message.text)
+    await message.answer(text='Введите количество мест в машине')
+    # Устанавливаем состояние ожидания ввода сидений
+    await state.set_state(FSMFillForm.fill_seats)
+
+
+# Этот хэндлер будет срабатывать, если во время ввода
+# будет введено что-то некорректное
+@dp.message(StateFilter(FSMFillForm.fill_max_power))
+async def warning_not_max_power(message: Message):
+    await message.answer(
+        text=errortext1
+    )
+
+
+# Этот хэндлер будет срабатывать, если введено корректо количество мест в машине
+@dp.message(StateFilter(FSMFillForm.fill_seats),
+            lambda x: int(x.text) >= 0)
+async def process_seats_sent(message: Message, state: FSMContext):
+    await state.update_data(seats=message.text)
     # Добавляем в "базу данных" заполненную форму по ключу id пользователя
     user_dict[message.from_user.id] = await state.get_data()
     # Завершаем "машину состояний"
     await state.clear()
     await message.answer(text='Спасибо!\n\nЗаполнение формы закончено.\n\nВаши данные сохранены!')
     await message.answer(
-        text='Чтобы посмотреть данные автомобиля - отправьте команду /showdata'
+        text=carinfo
     )
 
 
-# Этот хэндлер будет срабатывать на отправку команды /showdata
-# и отправлять в чат данные об автомобиле или сообщение об отсутствии данных
+# Этот хэндлер будет срабатывать, если во время ввода
+# будет введено что-то некорректное
+@dp.message(StateFilter(FSMFillForm.fill_seats))
+async def warning_not_seats(message: Message):
+    await message.answer(
+        text=errortext1
+    )
+
+
+# Хэндлер на команду /showdata
 @dp.message(Command(commands='showdata'), StateFilter(default_state))
 async def cmd_showdata(message: Message):
     # Отправляем пользователю данные об автомобиле, если она заполнена
@@ -316,7 +364,9 @@ async def cmd_showdata(message: Message):
                    f'Количество владельцев: {user_dict[message.from_user.id]["owner"]}\n' \
                    f'Тип продавца: {user_dict[message.from_user.id]["seller"]}\n' \
                    f'Расход топлива: {user_dict[message.from_user.id]["mileage"]}\n' \
-                   f'Объем двигателя: {user_dict[message.from_user.id]["engine"]}' 
+                   f'Объем двигателя: {user_dict[message.from_user.id]["engine"]}\n' \
+                   f'Мощность: {user_dict[message.from_user.id]["max_power"]}\n' \
+                   f'Количество сидений: {user_dict[message.from_user.id]["seats"]}'
         await message.answer(text=car_info)
     else:
         await message.answer(
@@ -325,8 +375,8 @@ async def cmd_showdata(message: Message):
         )
 
 
-# Этот хэндлер будет срабатывать на отправку команды /rate
-@dp.message(Command(commands='rate'), StateFilter(default_state))
+# Хэндлер на команду /rate
+@dp.message(Command(commands='rate'))
 async def cmd_rate(message: Message):
     await message.answer(
         text='Поставьте оценку этому боту:',
@@ -346,8 +396,8 @@ async def process_rate(callback: CallbackQuery):
     s3.put_object(Bucket=BUCKET, Key="rating_bot1.json", Body=json.dumps(rating_bot))
 
 
-# Этот хэндлер будет срабатывать на отправку команды /statistic
-@dp.message(Command(commands='statistic'), StateFilter(default_state))
+# Хэндлер на команду /statistic
+@dp.message(Command(commands='statistic'))
 async def cmd_statistic(message: Message):
     rating_bot = json.loads(s3.get_object(Bucket=BUCKET, Key="rating_bot1.json").get('Body').read())
     num_rates = sum([v for k, v in rating_bot.items()])
@@ -362,16 +412,25 @@ async def cmd_statistic(message: Message):
         )
 
 
-# Этот хэндлер будет срабатывать на отправку команды /predict
-@dp.message(Command(commands='predict'), StateFilter(default_state))
+# Хэндлер на команду /predict
+@dp.message(Command(commands='predict'))
 async def cmd_predict(message: Message):
-    await message.answer(
-        text='✨Твоя машина бесценна!✨'
-    )
+    # Отправляем пользователю данные об автомобиле, если она заполнена
+    if message.from_user.id in user_dict:
+        await message.answer(
+            text=f'Оцениваю автомобиль {user_dict[message.from_user.id]["name"]}'
+        )
+        predicted_price = predict_item(user_dict[message.from_user.id])
+        await message.answer(
+            text=f'Предполагаемая стоимость автомобиля {predicted_price[0]:0.0f} руб.'
+        )
+    else:
+        await message.answer(
+            text=emptydict
+        )
 
 
-# Этот хэндлер будет срабатывать на любые сообщения, кроме тех
-# для которых есть отдельные хэндлеры, вне состояний
+# Хэндлер на любые сообщения вне FSM, кроме тех, для которых есть отдельные хэндлеры
 @dp.message(StateFilter(default_state))
 async def send_echo(message: Message):
     await message.answer(
